@@ -58,9 +58,9 @@ impl Default for GameUnitsToCelestial {
     fn default() -> Self {
         Self {
             origin_latitude: 0.0,
-            origin_longitude: 190.0,
+            origin_longitude: 0.0,
             heading: 0.0,
-            time_scale: 10000.0,
+            time_scale: 1.0,
             initial_julian_date: 2451545.0,
         }
     }
