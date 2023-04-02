@@ -58,6 +58,12 @@ fn vertex( @builtin(vertex_index) in_vertex_index: u32,) -> VertexOutput {
 
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
+    // // The north star has a magnitude of 2.02. Setting its color to red can be useful for
+    // // debugging purposes.
+    // if (in.magnitude == 2.02) {
+    //     return vec4(1., 0., 0., 1.);
+    // }
+
 	let v = in.texcoord * 2.0 - 1.0;
 	let x = dot(v, v);
 	let alpha = smoothstep(1., 0., x) * clamp(0., 1., exp(1. - 0.7 * in.magnitude));
