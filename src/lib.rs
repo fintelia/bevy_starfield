@@ -143,7 +143,7 @@ fn prepare_starfield(
     buffer.world_to_ecef = game_units_to_celestial.world_to_ecef;
     buffer.sidereal_time = astro::mn_sidr(
         game_units_to_celestial.initial_julian_date
-            + game_units_to_celestial.time_scale * time.elapsed_seconds_f64(),
+            + game_units_to_celestial.time_scale * time.elapsed_seconds_f64() / 86400.0,
     ) as f32;
 
     starfield_buffer
