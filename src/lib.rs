@@ -24,7 +24,7 @@ use bevy::{
         },
         renderer::{RenderDevice, RenderQueue},
         texture::DefaultImageSampler,
-        view::{ViewUniformOffset, ViewUniforms},
+        view::{ViewTarget, ViewUniformOffset, ViewUniforms},
         Extract, RenderApp, RenderSet,
     },
 };
@@ -160,19 +160,22 @@ fn queue_starfield(
     draw_functions: Res<DrawFunctions<Opaque3d>>,
     render_device: Res<RenderDevice>,
     view_uniforms: Res<ViewUniforms>,
-    mut views: Query<(Entity, &mut RenderPhase<Opaque3d>)>,
+    msaa: Res<Msaa>,
+    mut views: Query<(Entity, &mut RenderPhase<Opaque3d>, &ViewTarget)>,
 ) {
-    let pipeline = pipelines.specialize(&pipeline_cache, &starfield_pipeline, ());
-
     let draw_function = draw_functions.read().id::<DrawStarfield>();
     if let (Some(view_uniforms), Some(starfield_buffer)) = (
         view_uniforms.uniforms.binding(),
         starfield_buffer.buffer.binding(),
     ) {
-        for (entity, mut opaque3d) in views.iter_mut() {
+        for (entity, mut opaque3d, view_target) in views.iter_mut() {
             opaque3d.add(Opaque3d {
                 distance: f32::MAX,
-                pipeline,
+                pipeline: pipelines.specialize(
+                    &pipeline_cache,
+                    &starfield_pipeline,
+                    (msaa.samples(), view_target.main_texture_format()),
+                ),
                 entity: commands.spawn_empty().id(),
                 draw_function,
             });
@@ -281,8 +284,8 @@ impl FromWorld for StarfieldPipeline {
     }
 }
 impl SpecializedRenderPipeline for StarfieldPipeline {
-    type Key = ();
-    fn specialize(&self, _key: Self::Key) -> RenderPipelineDescriptor {
+    type Key = (u32, TextureFormat);
+    fn specialize(&self, (samples, texture_format): Self::Key) -> RenderPipelineDescriptor {
         RenderPipelineDescriptor {
             label: Some("starfield_pipeline".into()),
             layout: vec![self.stars_layout.clone()],
@@ -310,7 +313,7 @@ impl SpecializedRenderPipeline for StarfieldPipeline {
                 bias: Default::default(),
             }),
             multisample: MultisampleState {
-                count: 4,
+                count: samples,
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
@@ -319,7 +322,7 @@ impl SpecializedRenderPipeline for StarfieldPipeline {
                 shader_defs: Vec::new(),
                 entry_point: "fragment".into(),
                 targets: vec![Some(ColorTargetState {
-                    format: TextureFormat::Rgba8UnormSrgb,
+                    format: texture_format,
                     blend: None,
                     write_mask: ColorWrites::ALL,
                 })],
