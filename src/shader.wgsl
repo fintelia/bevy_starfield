@@ -39,14 +39,14 @@ fn vertex( @builtin(vertex_index) in_vertex_index: u32,) -> VertexOutput {
 	if(in_vertex_index % 6u == 4u) { out.texcoord = vec2(0., 1.); }
 	if(in_vertex_index % 6u == 5u) { out.texcoord = vec2(1., 0.); }
 
-    let direction = uniforms.world_to_ecef * vec3(
+    let direction = vec3(
 		cos(ascension - sidereal_time) * cos(declination),
 		sin(ascension - sidereal_time) * cos(declination),
 		sin(declination));
 
     let screen_dimensions = vec2(view.viewport.z, view.viewport.w);
 
-	out.position = view.view_proj * vec4(direction, 1.e-15);
+	out.position = view.projection * vec4(uniforms.world_to_ecef * direction, 1.e-15);
     let position_delta = (out.texcoord-vec2(0.5)) * out.position.w * 4.0 / vec2(screen_dimensions);
 	out.position.x += position_delta.x;
     out.position.y += position_delta.y;

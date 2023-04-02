@@ -35,8 +35,15 @@ mod astro;
 /// Conversion between game units and astronomical ones.
 #[derive(Clone, Resource)]
 pub struct GameUnitsToCelestial {
-    /// The matrix that transforms world space coordinates into ECEF coordinates.
-    pub world_to_ecef: Mat3,
+    /// The geodetic latitude in degress of the point on the Earth's surface corresponding to the
+    /// world space origin.
+    pub origin_latitude: f32,
+    /// The longitude in degress of the point on the Earth's surface corresponding to the world
+    /// space origin.
+    pub origin_longitude: f32,
+    /// The heading of the world space coordinate frame in degrees. A value of 0.0 means that the
+    /// -Z axis points north. A value of 45.0 means that the -Z axis points northeast.
+    pub heading: f32,
     /// The [Julian date](https://en.wikipedia.org/wiki/Julian_date) of the start of the game.
     ///
     /// Defaults to 2451545.0 which corresponds to midnight on January 1st, 2000.
@@ -47,36 +54,13 @@ pub struct GameUnitsToCelestial {
     /// move quickly across the sky.
     pub time_scale: f64,
 }
-impl GameUnitsToCelestial {
-    /// Initialize `world_to_ecef` by specifying the location of the world space origin in
-    /// [geodetic coordinates](https://en.wikipedia.org/wiki/Geodetic_coordinates)).
-    pub fn with_origin_coordinates(self, latitude: f32, longitude: f32) -> Self {
-        let latitude = latitude.to_radians();
-        let longitude = longitude.to_radians();
-
-        let sin_latitude = latitude.sin();
-        let cos_latitude = latitude.cos();
-        let sin_longitude = longitude.sin();
-        let cos_longitude = longitude.cos();
-
-        #[rustfmt::skip]
-        let world_to_ecef = Mat3::from_cols_array(&[
-            -sin_latitude, -sin_longitude * cos_latitude, cos_latitude * cos_longitude,
-            cos_latitude,  -sin_longitude * sin_latitude, cos_latitude * sin_longitude,
-            0.0,           cos_longitude,                 sin_longitude,
-        ]).transpose();
-
-        Self {
-            world_to_ecef,
-            ..self
-        }
-    }
-}
 impl Default for GameUnitsToCelestial {
     fn default() -> Self {
         Self {
-            world_to_ecef: Mat3::IDENTITY,
-            time_scale: 1.0,
+            origin_latitude: 0.0,
+            origin_longitude: 190.0,
+            heading: 0.0,
+            time_scale: 10000.0,
             initial_julian_date: 2451545.0,
         }
     }
@@ -89,7 +73,7 @@ type DrawStarfield = (
 );
 
 #[derive(Default, Clone, Resource, ExtractResource, Reflect, ShaderType)]
-#[reflect(Resource)]
+#[reflect(Reso  urce)]
 struct StarfieldUniform {
     pub world_to_ecef: Mat3,
     pub sidereal_time: f32,
@@ -140,7 +124,18 @@ fn prepare_starfield(
     time: Res<Time>,
 ) {
     let buffer = starfield_buffer.buffer.get_mut();
-    buffer.world_to_ecef = game_units_to_celestial.world_to_ecef;
+
+    buffer.world_to_ecef = /*Mat3::from_cols(
+        Vec3::new(0.0, 1.0, 0.0),
+        Vec3::new(1.0, 0.0, 0.0),
+        Vec3::new(0.0, 0.0, -1.0),
+    ).transpose();*/
+        Mat3::from_euler(EulerRot::ZXY,
+        game_units_to_celestial.origin_longitude.to_radians(),
+        game_units_to_celestial.origin_latitude.to_radians(),
+        (180.0-game_units_to_celestial.heading).to_radians(),
+    )
+    .transpose();
     buffer.sidereal_time = astro::mn_sidr(
         game_units_to_celestial.initial_julian_date
             + game_units_to_celestial.time_scale * time.elapsed_seconds_f64() / 86400.0,
