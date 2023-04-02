@@ -1,0 +1,11 @@
+[package]
+name = "bevy_starfield"
+version = "0.1.0"
+edition = "2021"
+authors = ["Jonathan Behrens <fintelia@gmail.com>"]
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+bevy = "0.10.1"
+bytemuck = "1.13.1"
+
