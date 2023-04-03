@@ -22,6 +22,11 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .add_plugin(StarfieldPlugin)
         .add_startup_system(setup)
+        .insert_resource(GameUnitsToCelestial {
+            origin_latitude: 51.4778,
+            origin_longitude: -0.0014,
+            ..Default::default()
+        })
         .run();
 }
 
