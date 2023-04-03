@@ -46,8 +46,8 @@ fn vertex( @builtin(vertex_index) in_vertex_index: u32,) -> VertexOutput {
 
     let screen_dimensions = vec2(view.viewport.z, view.viewport.w);
 
-	out.position = view.projection * vec4(uniforms.world_to_ecef * direction, 1.e-15);
-    let position_delta = (out.texcoord-vec2(0.5)) * out.position.w * 4.0 / vec2(screen_dimensions);
+	out.position = view.view_proj * vec4(uniforms.world_to_ecef * direction, 1.e-15);
+    let position_delta = (out.texcoord-vec2(0.5)) * out.position.w * 4.0 * 2.0 * clamp(exp(1. - 0.35 * out.magnitude), .25, 1.) / vec2(screen_dimensions);
 	out.position.x += position_delta.x;
     out.position.y += position_delta.y;
 
@@ -67,5 +67,5 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
 	let v = in.texcoord * 2.0 - 1.0;
 	let x = dot(v, v);
 	let alpha = smoothstep(1., 0., x) * clamp(0., 1., exp(1. - 0.7 * in.magnitude));
-    return vec4(vec3(alpha), 1.0);
+    return vec4(1., 1., 1., alpha);
 }

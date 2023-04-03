@@ -20,7 +20,7 @@ use bevy::{
             ColorWrites, CompareFunction, DepthStencilState, FragmentState, FrontFace,
             MultisampleState, PipelineCache, PolygonMode, PrimitiveState, PrimitiveTopology,
             RenderPipelineDescriptor, ShaderStages, ShaderType, SpecializedRenderPipeline,
-            SpecializedRenderPipelines, TextureFormat, UniformBuffer, VertexState,
+            SpecializedRenderPipelines, TextureFormat, UniformBuffer, VertexState, BlendState,
         },
         renderer::{RenderDevice, RenderQueue},
         texture::DefaultImageSampler,
@@ -303,7 +303,7 @@ impl SpecializedRenderPipeline for StarfieldPipeline {
             depth_stencil: Some(DepthStencilState {
                 format: TextureFormat::Depth32Float,
                 depth_write_enabled: false,
-                depth_compare: CompareFunction::Always,
+                depth_compare: CompareFunction::GreaterEqual,
                 stencil: Default::default(),
                 bias: Default::default(),
             }),
@@ -318,7 +318,7 @@ impl SpecializedRenderPipeline for StarfieldPipeline {
                 entry_point: "fragment".into(),
                 targets: vec![Some(ColorTargetState {
                     format: texture_format,
-                    blend: None,
+                    blend: Some(BlendState::ALPHA_BLENDING),
                     write_mask: ColorWrites::ALL,
                 })],
             }),
