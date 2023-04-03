@@ -40,8 +40,8 @@ fn vertex( @builtin(vertex_index) in_vertex_index: u32,) -> VertexOutput {
 	if(in_vertex_index % 6u == 5u) { out.texcoord = vec2(1., 0.); }
 
     let direction = vec3(
+		-sin(ascension - sidereal_time) * cos(declination),
 		cos(ascension - sidereal_time) * cos(declination),
-		sin(ascension - sidereal_time) * cos(declination),
 		sin(declination));
 
     let screen_dimensions = vec2(view.viewport.z, view.viewport.w);
