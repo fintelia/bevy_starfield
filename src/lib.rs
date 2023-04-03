@@ -46,7 +46,7 @@ pub struct GameUnitsToCelestial {
     pub heading: f32,
     /// The [Julian date](https://en.wikipedia.org/wiki/Julian_date) of the start of the game.
     ///
-    /// Defaults to 2451545.0 which corresponds to midnight on January 1st, 2000.
+    /// Defaults to 2451544.5 which corresponds to midnight UTC on January 1st, 2000.
     pub initial_julian_date: f64,
     /// Scale factor between the game's time and the real world's time.
     ///
@@ -61,7 +61,7 @@ impl Default for GameUnitsToCelestial {
             origin_longitude: 0.0,
             heading: 0.0,
             time_scale: 1.0,
-            initial_julian_date: 2451545.0,
+            initial_julian_date: 2451544.5,
         }
     }
 }
