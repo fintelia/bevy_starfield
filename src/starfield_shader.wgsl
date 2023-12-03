@@ -8,18 +8,21 @@ struct Vertex {
     @location(1) normal: vec3<f32>,
     @location(2) uv: vec2<f32>,
 
-    @location(3) i_pos_scale: vec4<f32>,
-    @location(4) i_color: vec4<f32>,
+		@location(3) instance_position: vec3<f32>,
+    // @location(3) i_pos_scale: vec4<f32>,
+    // @location(4) i_color: vec4<f32>,
 };
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
-    @location(0) color: vec4<f32>,
+    // @location(0) color: vec4<f32>,
 };
 
 @vertex
 fn vertex(vertex: Vertex) -> VertexOutput {
-    let position = vertex.position * vertex.i_pos_scale.w + vertex.i_pos_scale.xyz;
+    // let position = vertex.position * vertex.i_pos_scale.w + vertex.i_pos_scale.xyz;
+		let position = vertex.position + vertex.instance_position;
+		
     var out: VertexOutput;
     // NOTE: Passing 0 as the instance_index to get_model_matrix() is a hack
     // for this example as the instance_index builtin would map to the wrong
@@ -31,12 +34,13 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     );
 
     // out.color = vertex.i_color;
-		out.color = vec4<f32>(1.0, 0.0, 0.0, 1.0);
+		// out.color = vec4<f32>(1.0, 0.0, 0.0, 1.0);
 
     return out;
 }
 
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
-    return in.color;
+    // return in.color;
+		return vec4<f32>(1.0, 1.0, 1.0, 1.0);
 }

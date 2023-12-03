@@ -40,7 +40,7 @@ pub struct StarfieldPlugin {
 impl Default for StarfieldPlugin {
 	fn default() -> Self {
 		Self {
-			num: 1000,
+			num: 10_000,
 			distance: 1_000.0,
 		}
 	}
@@ -85,8 +85,8 @@ impl StarfieldPlugin {
 					for _ in 0..config.num {
 						stars.push(InstanceData {
 							position: gen_random_sphere_normal() * config.distance,
-							scale: 1.0,
-							color: Color::BLUE.into(),
+							// scale: 1.0,
+							color: Color::WHITE.into(),
 						});
 					}
 					stars
@@ -163,7 +163,7 @@ impl Plugin for CustomMaterialPlugin {
 #[repr(C)]
 struct InstanceData {
 	position: Vec3,
-	scale: f32,
+	// scale: f32,
 	color: [f32; 4],
 }
 
@@ -241,9 +241,7 @@ struct CustomPipeline {
 
 impl FromWorld for CustomPipeline {
 	fn from_world(world: &mut World) -> Self {
-		let asset_server = world.resource::<AssetServer>();
 		let shader = STARFIELD_SHADER_HANDLE;
-
 		let mesh_pipeline = world.resource::<MeshPipeline>();
 
 		CustomPipeline {
@@ -277,13 +275,13 @@ impl SpecializedMeshPipeline for CustomPipeline {
 			step_mode: VertexStepMode::Instance,
 			attributes: vec![
 				VertexAttribute {
-					format: VertexFormat::Float32x4,
+					format: VertexFormat::Float32x3,
 					offset: 0,
 					shader_location: 3, // shader locations 0-2 are taken up by Position, Normal and UV attributes
 				},
 				VertexAttribute {
 					format: VertexFormat::Float32x4,
-					offset: VertexFormat::Float32x4.size(),
+					offset: VertexFormat::Float32x3.size(),
 					shader_location: 4,
 				},
 			],
