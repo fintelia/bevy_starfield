@@ -5,7 +5,7 @@ use bevy_starfield::StarfieldPlugin;
 
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, StarfieldPlugin))
+        .add_plugins((DefaultPlugins, StarfieldPlugin::default()))
         .add_systems(Startup, setup)
         .run();
 }

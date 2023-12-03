@@ -13,3 +13,5 @@ exclude = ["/examples/", "/.github/"]
 [dependencies]
 bevy = "0.12.1"
 bytemuck = "*"
+rand = "0.8.5"
+rng = "0.1.0"

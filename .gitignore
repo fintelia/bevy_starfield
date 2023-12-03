@@ -7,3 +7,4 @@
 !Cargo.toml
 !stars.bin
 !.cargo
+!.rustfmt.toml
