@@ -43,7 +43,8 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // return in.color;
-		let alpha = sin(globals.time / (random3D(in.clip_position.xyz) * 10.0));
+		let rand = min(random3D(in.clip_position.xyz) + 0.2, 1.0);
+		let alpha = sin(globals.time / (rand * 2.0));
 		// let alpha = 0.0;
 
 		return vec4<f32>(alpha, alpha, alpha, alpha);

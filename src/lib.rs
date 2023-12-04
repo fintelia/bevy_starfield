@@ -1,4 +1,5 @@
 use std::f32::consts::TAU;
+use std::ops::RangeInclusive;
 
 use bevy::prelude::*;
 use bevy::{
@@ -25,35 +26,55 @@ use bevy::{
 	},
 };
 use bytemuck::{Pod, Zeroable};
+use rand::rngs::ThreadRng;
 use rand::Rng;
 
 // primarily copied from 0.12.1 example:
 // https://github.com/bevyengine/bevy/blob/22e39c4abf6e2fdf99ba0820b3c35db73be71347/examples/shader/shader_instancing.rs
 
-#[derive(Resource, Clone, Copy)]
+#[derive(Clone)]
 pub struct StarfieldPlugin {
 	pub num: usize,
-	pub distance: f32,
+	pub distance: RangeInclusive<f32>,
+	pub star_size: f32,
 }
 
 impl Default for StarfieldPlugin {
 	fn default() -> Self {
 		Self {
-			num: 10_000,
-			distance: 1_000.0,
+			num: 20_000,
+			star_size: 0.5,
+			distance: 600.0..=1000.0,
 		}
 	}
 }
 
 #[cfg(not(feature = "dev"))]
-const STARFIELD_SHADER_HANDLE: Handle<Shader> = Handle::weak_from_u128(4913569193382690169);
+const STARFIELD_SHADER_HANDLE: Handle<Shader> = Handle::weak_from_u128(4203569693382690169);
 
 impl Plugin for StarfieldPlugin {
 	fn build(&self, app: &mut App) {
-		app
-			.add_systems(Startup, Self::setup)
-			.add_plugins(CustomMaterialPlugin)
-			.insert_resource(*self);
+		app.add_plugins(CustomMaterialPlugin);
+
+		app.world.resource_scope(|world, mut meshs: Mut<Assets<Mesh>>| {
+			world.spawn((
+				meshs.add(Mesh::from(shape::UVSphere {
+					radius: self.star_size,
+					sectors: 8,
+					stacks: 8,
+				})),
+				SpatialBundle::INHERITED_IDENTITY,
+				StarsInstanceData::new(self.num, self.distance.clone()),
+				// NOTE: Frustum culling is done based on the Aabb of the Mesh and the GlobalTransform.
+				// As the cube is at the origin, if its Aabb moves outside the view frustum, all the
+				// instanced cubes will be culled.
+				// The InstanceMaterialData contains the 'GlobalTransform' information for this custom
+				// instancing, and that is not taken into account with the built-in frustum culling.
+				// We must disable the built-in frustum culling by adding the `NoFrustumCulling` marker
+				// component to avoid incorrect culling.
+				NoFrustumCulling,
+			));
+		});
 
 		#[cfg(not(feature = "dev"))]
 		bevy::asset::load_internal_asset!(
@@ -65,47 +86,6 @@ impl Plugin for StarfieldPlugin {
 	}
 }
 
-impl StarfieldPlugin {
-	fn setup(config: Res<Self>, mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
-		commands.spawn((
-			meshes.add(Mesh::from(shape::UVSphere {
-				radius: 0.5,
-				..default()
-			})),
-			SpatialBundle::INHERITED_IDENTITY,
-			InstanceMaterialData(
-				// (1..=10)
-				//     .flat_map(|x| (1..=10).map(move |y| (x as f32 / 10.0, y as f32 / 10.0)))
-				//     .map(|(x, y)| InstanceData {
-				//         position: Vec3::new(x * 10.0 - 5.0, y * 10.0 - 5.0, 0.0),
-				//         scale: 1.0,
-				//         color: Color::hsla(x * 360., y, 0.5, 1.0).as_rgba_f32(),
-				//     })
-				//     .collect(),
-				{
-					let mut stars = Vec::with_capacity(config.num);
-					for _ in 0..config.num {
-						stars.push(InstanceData {
-							position: gen_random_sphere_normal() * config.distance,
-							// scale: 1.0,
-							color: Color::WHITE.into(),
-						});
-					}
-					stars
-				},
-			),
-			// NOTE: Frustum culling is done based on the Aabb of the Mesh and the GlobalTransform.
-			// As the cube is at the origin, if its Aabb moves outside the view frustum, all the
-			// instanced cubes will be culled.
-			// The InstanceMaterialData contains the 'GlobalTransform' information for this custom
-			// instancing, and that is not taken into account with the built-in frustum culling.
-			// We must disable the built-in frustum culling by adding the `NoFrustumCulling` marker
-			// component to avoid incorrect culling.
-			NoFrustumCulling,
-		));
-	}
-}
-
 fn from_polar_normal(theta: f32, phi: f32) -> Vec3 {
 	Vec3 {
 		x: theta.sin() * phi.cos(),
@@ -114,8 +94,7 @@ fn from_polar_normal(theta: f32, phi: f32) -> Vec3 {
 	}
 }
 
-fn gen_random_sphere_normal() -> Vec3 {
-	let mut rng = rand::thread_rng();
+fn gen_random_sphere_normal(rng: &mut ThreadRng) -> Vec3 {
 	let phi = rng.gen_range(0. ..TAU);
 	let z: f32 = rng.gen_range(-1. ..1.);
 	let theta = z.acos();
@@ -125,16 +104,31 @@ fn gen_random_sphere_normal() -> Vec3 {
 	ret.normalize()
 }
 
-#[derive(Component, Deref)]
-struct InstanceMaterialData(Vec<InstanceData>);
+#[derive(Component,)]
+pub struct StarsInstanceData(Vec<InstanceData>);
 
-impl ExtractComponent for InstanceMaterialData {
-	type Query = &'static InstanceMaterialData;
+impl ExtractComponent for StarsInstanceData {
+	type Query = &'static StarsInstanceData;
 	type Filter = ();
 	type Out = Self;
 
 	fn extract_component(item: QueryItem<'_, Self::Query>) -> Option<Self> {
-		Some(InstanceMaterialData(item.0.clone()))
+		Some(StarsInstanceData(item.0.clone()))
+	}
+}
+
+impl StarsInstanceData {
+	pub fn new(num: usize, distance: RangeInclusive<f32>) -> Self {
+		let mut stars = Vec::with_capacity(num);
+		let mut rng = rand::thread_rng();
+		for _ in 0..num {
+			stars.push(InstanceData {
+				position: gen_random_sphere_normal(&mut rng) * rng.gen_range(distance.clone()),
+				// scale: 1.0,
+				color: Color::WHITE.into(),
+			});
+		}
+		StarsInstanceData(stars)
 	}
 }
 
@@ -142,7 +136,7 @@ struct CustomMaterialPlugin;
 
 impl Plugin for CustomMaterialPlugin {
 	fn build(&self, app: &mut App) {
-		app.add_plugins(ExtractComponentPlugin::<InstanceMaterialData>::default());
+		app.add_plugins(ExtractComponentPlugin::<StarsInstanceData>::default());
 		app
 			.sub_app_mut(RenderApp)
 			.add_render_command::<Transparent3d, DrawCustom>()
@@ -178,7 +172,7 @@ fn queue_custom(
 	pipeline_cache: Res<PipelineCache>,
 	meshes: Res<RenderAssets<Mesh>>,
 	render_mesh_instances: Res<RenderMeshInstances>,
-	material_meshes: Query<Entity, With<InstanceMaterialData>>,
+	material_meshes: Query<Entity, With<StarsInstanceData>>,
 	mut views: Query<(&ExtractedView, &mut RenderPhase<Transparent3d>)>,
 ) {
 	let draw_custom = transparent_3d_draw_functions.read().id::<DrawCustom>();
@@ -219,18 +213,18 @@ struct InstanceBuffer {
 
 fn prepare_instance_buffers(
 	mut commands: Commands,
-	query: Query<(Entity, &InstanceMaterialData)>,
+	query: Query<(Entity, &StarsInstanceData)>,
 	render_device: Res<RenderDevice>,
 ) {
 	for (entity, instance_data) in &query {
 		let buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
 			label: Some("instance data buffer"),
-			contents: bytemuck::cast_slice(instance_data.as_slice()),
+			contents: bytemuck::cast_slice(instance_data.0.as_slice()),
 			usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
 		});
 		commands.entity(entity).insert(InstanceBuffer {
 			buffer,
-			length: instance_data.len(),
+			length: instance_data.0.len(),
 		});
 	}
 }
@@ -247,7 +241,9 @@ impl FromWorld for CustomPipeline {
 		let shader = STARFIELD_SHADER_HANDLE;
 
 		#[cfg(feature = "dev")]
-		let shader = world.resource::<AssetServer>().load("starfield_shader.wgsl");
+		let shader = world
+			.resource::<AssetServer>()
+			.load("starfield_shader.wgsl");
 
 		let mesh_pipeline = world.resource::<MeshPipeline>();
 
