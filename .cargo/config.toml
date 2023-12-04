@@ -1,2 +1,2 @@
 [alias]
-r = "run --example cube --features bevy/file_watcher --features bevy/dynamic_linking"
+r = "run --example cube --features dev"

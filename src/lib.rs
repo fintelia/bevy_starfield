@@ -10,7 +10,6 @@ use bevy::{
 	pbr::{
 		MeshPipeline, MeshPipelineKey, RenderMeshInstances, SetMeshBindGroup, SetMeshViewBindGroup,
 	},
-	prelude::*,
 	render::{
 		extract_component::{ExtractComponent, ExtractComponentPlugin},
 		mesh::{GpuBufferInfo, MeshVertexBufferLayout},
@@ -46,6 +45,7 @@ impl Default for StarfieldPlugin {
 	}
 }
 
+#[cfg(not(feature = "dev"))]
 const STARFIELD_SHADER_HANDLE: Handle<Shader> = Handle::weak_from_u128(4913569193382690169);
 
 impl Plugin for StarfieldPlugin {
@@ -54,10 +54,12 @@ impl Plugin for StarfieldPlugin {
 			.add_systems(Startup, Self::setup)
 			.add_plugins(CustomMaterialPlugin)
 			.insert_resource(*self);
+
+		#[cfg(not(feature = "dev"))]
 		bevy::asset::load_internal_asset!(
 			app,
 			STARFIELD_SHADER_HANDLE,
-			"starfield_shader.wgsl",
+			"../assets/starfield_shader.wgsl",
 			Shader::from_wgsl
 		);
 	}
@@ -241,7 +243,12 @@ struct CustomPipeline {
 
 impl FromWorld for CustomPipeline {
 	fn from_world(world: &mut World) -> Self {
+		#[cfg(not(feature = "dev"))]
 		let shader = STARFIELD_SHADER_HANDLE;
+
+		#[cfg(feature = "dev")]
+		let shader = world.resource::<AssetServer>().load("starfield_shader.wgsl");
+
 		let mesh_pipeline = world.resource::<MeshPipeline>();
 
 		CustomPipeline {

@@ -2,6 +2,7 @@
 // https://github.com/bevyengine/bevy/blob/22e39c4abf6e2fdf99ba0820b3c35db73be71347/assets/shaders/instancing.wgsl
 
 #import bevy_pbr::mesh_functions::{get_model_matrix, mesh_position_local_to_clip}
+#import bevy_pbr::mesh_view_bindings::globals;
 
 struct Vertex {
     @location(0) position: vec3<f32>,
@@ -42,5 +43,16 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // return in.color;
-		return vec4<f32>(1.0, 1.0, 1.0, 1.0);
+		let alpha = sin(globals.time / (random3D(in.clip_position.xyz) * 10.0));
+		// let alpha = 0.0;
+
+		return vec4<f32>(alpha, alpha, alpha, alpha);
+}
+
+fn random1D(s: f32) -> f32 {
+    return fract(sin(s * 12.9898) * 43758.5453123);
+}
+
+fn random3D(v: vec3<f32>) -> f32 {
+		return fract(sin(dot(v, vec3<f32>(12.9898, 78.233, 45.5432))) * 43758.5453123);
 }
