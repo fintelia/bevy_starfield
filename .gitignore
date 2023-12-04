@@ -1,2 +1,11 @@
-/target
-/Cargo.lock
+/*
+
+!README.md
+!examples
+!src
+!Cargo.lock
+!Cargo.toml
+!stars.bin
+!.cargo
+!.rustfmt.toml
+!assets

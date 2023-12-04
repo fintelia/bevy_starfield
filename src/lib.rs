@@ -1,346 +1,345 @@
+use std::f32::consts::TAU;
+use std::ops::RangeInclusive;
+
+use bevy::prelude::*;
 use bevy::{
-    core_pipeline::core_3d::Opaque3d,
-    ecs::{
-        query::WorldQuery,
-        system::{lifetimeless::Read, SystemParam, SystemState},
-    },
-    pbr::SetMeshViewBindGroup,
-    prelude::*,
-    reflect::TypeUuid,
-    render::{
-        extract_resource::ExtractResource,
-        render_phase::{
-            AddRenderCommand, DrawFunctions, PhaseItem, RenderCommand, RenderCommandResult,
-            RenderPhase, SetItemPipeline, TrackedRenderPass,
-        },
-        render_resource::{
-            BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
-            BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, Buffer,
-            BufferBinding, BufferBindingType, BufferInitDescriptor, BufferUsages, ColorTargetState,
-            ColorWrites, CompareFunction, DepthStencilState, FragmentState, FrontFace,
-            MultisampleState, PipelineCache, PolygonMode, PrimitiveState, PrimitiveTopology,
-            RenderPipelineDescriptor, ShaderStages, ShaderType, SpecializedRenderPipeline,
-            SpecializedRenderPipelines, TextureFormat, UniformBuffer, VertexState, BlendState,
-        },
-        renderer::{RenderDevice, RenderQueue},
-        texture::DefaultImageSampler,
-        view::{ViewTarget, ViewUniformOffset, ViewUniforms},
-        Extract, RenderApp, RenderSet,
-    },
+	core_pipeline::core_3d::Transparent3d,
+	ecs::{
+		query::QueryItem,
+		system::{lifetimeless::*, SystemParamItem},
+	},
+	pbr::{
+		MeshPipeline, MeshPipelineKey, RenderMeshInstances, SetMeshBindGroup, SetMeshViewBindGroup,
+	},
+	render::{
+		extract_component::{ExtractComponent, ExtractComponentPlugin},
+		mesh::{GpuBufferInfo, MeshVertexBufferLayout},
+		render_asset::RenderAssets,
+		render_phase::{
+			AddRenderCommand, DrawFunctions, PhaseItem, RenderCommand, RenderCommandResult, RenderPhase,
+			SetItemPipeline, TrackedRenderPass,
+		},
+		render_resource::*,
+		renderer::RenderDevice,
+		view::{ExtractedView, NoFrustumCulling},
+		Render, RenderApp, RenderSet,
+	},
 };
-use std::num::NonZeroU64;
+use bytemuck::{Pod, Zeroable};
+use rand::rngs::ThreadRng;
+use rand::Rng;
 
-mod astro;
+// primarily copied from 0.12.1 example:
+// https://github.com/bevyengine/bevy/blob/22e39c4abf6e2fdf99ba0820b3c35db73be71347/examples/shader/shader_instancing.rs
 
-/// Conversion between game units and astronomical ones.
-#[derive(Clone, Resource)]
-pub struct GameUnitsToCelestial {
-    /// The geodetic latitude in degress of the point on the Earth's surface corresponding to the
-    /// world space origin.
-    pub origin_latitude: f32,
-    /// The longitude in degress of the point on the Earth's surface corresponding to the world
-    /// space origin.
-    pub origin_longitude: f32,
-    /// The heading of the world space coordinate frame in degrees. A value of 0.0 means that the
-    /// -Z axis points north. A value of 45.0 means that the -Z axis points northeast.
-    pub heading: f32,
-    /// The [Julian date](https://en.wikipedia.org/wiki/Julian_date) of the start of the game.
-    ///
-    /// Defaults to 2451544.5 which corresponds to midnight UTC on January 1st, 2000.
-    pub initial_julian_date: f64,
-    /// Scale factor between the game's time and the real world's time.
-    ///
-    /// Defaults to 1.0. Set to 0.0 to have stars stop moving, or to large values to have stars
-    /// move quickly across the sky.
-    pub time_scale: f64,
-}
-impl Default for GameUnitsToCelestial {
-    fn default() -> Self {
-        Self {
-            origin_latitude: 0.0,
-            origin_longitude: 0.0,
-            heading: 0.0,
-            time_scale: 1.0,
-            initial_julian_date: 2451544.5,
-        }
-    }
+#[derive(Clone)]
+pub struct StarfieldPlugin {
+	pub num: usize,
+	pub distance: RangeInclusive<f32>,
+	pub star_size: f32,
 }
 
-type DrawStarfield = (
-    SetItemPipeline,
-    SetMeshViewBindGroup<0>,
-    StarfieldRenderCommand,
-);
-
-#[derive(Default, Clone, Resource, ExtractResource, Reflect, ShaderType)]
-#[reflect(Reso  urce)]
-struct StarfieldUniform {
-    pub world_to_ecef: Mat3,
-    pub sidereal_time: f32,
+impl Default for StarfieldPlugin {
+	fn default() -> Self {
+		Self {
+			num: 20_000,
+			star_size: 0.5,
+			distance: 600.0..=1000.0,
+		}
+	}
 }
 
-#[derive(Resource, Default)]
-struct StarfieldUniformBuffer {
-    buffer: UniformBuffer<StarfieldUniform>,
+#[cfg(not(feature = "dev"))]
+const STARFIELD_SHADER_HANDLE: Handle<Shader> = Handle::weak_from_u128(4203569693382690169);
+
+impl Plugin for StarfieldPlugin {
+	fn build(&self, app: &mut App) {
+		app.add_plugins(CustomMaterialPlugin);
+
+		app.world.resource_scope(|world, mut meshs: Mut<Assets<Mesh>>| {
+			world.spawn((
+				meshs.add(Mesh::from(shape::UVSphere {
+					radius: self.star_size,
+					sectors: 8,
+					stacks: 8,
+				})),
+				SpatialBundle::INHERITED_IDENTITY,
+				StarsInstanceData::new(self.num, self.distance.clone()),
+				// NOTE: Frustum culling is done based on the Aabb of the Mesh and the GlobalTransform.
+				// As the cube is at the origin, if its Aabb moves outside the view frustum, all the
+				// instanced cubes will be culled.
+				// The InstanceMaterialData contains the 'GlobalTransform' information for this custom
+				// instancing, and that is not taken into account with the built-in frustum culling.
+				// We must disable the built-in frustum culling by adding the `NoFrustumCulling` marker
+				// component to avoid incorrect culling.
+				NoFrustumCulling,
+			));
+		});
+
+		#[cfg(not(feature = "dev"))]
+		bevy::asset::load_internal_asset!(
+			app,
+			STARFIELD_SHADER_HANDLE,
+			"../assets/starfield_shader.wgsl",
+			Shader::from_wgsl
+		);
+	}
+}
+
+fn from_polar_normal(theta: f32, phi: f32) -> Vec3 {
+	Vec3 {
+		x: theta.sin() * phi.cos(),
+		y: theta.sin() * phi.sin(),
+		z: theta.cos(),
+	}
+}
+
+fn gen_random_sphere_normal(rng: &mut ThreadRng) -> Vec3 {
+	let phi = rng.gen_range(0. ..TAU);
+	let z: f32 = rng.gen_range(-1. ..1.);
+	let theta = z.acos();
+
+	let ret = from_polar_normal(theta, phi);
+
+	ret.normalize()
+}
+
+#[derive(Component,)]
+pub struct StarsInstanceData(Vec<InstanceData>);
+
+impl ExtractComponent for StarsInstanceData {
+	type Query = &'static StarsInstanceData;
+	type Filter = ();
+	type Out = Self;
+
+	fn extract_component(item: QueryItem<'_, Self::Query>) -> Option<Self> {
+		Some(StarsInstanceData(item.0.clone()))
+	}
+}
+
+impl StarsInstanceData {
+	pub fn new(num: usize, distance: RangeInclusive<f32>) -> Self {
+		let mut stars = Vec::with_capacity(num);
+		let mut rng = rand::thread_rng();
+		for _ in 0..num {
+			stars.push(InstanceData {
+				position: gen_random_sphere_normal(&mut rng) * rng.gen_range(distance.clone()),
+				// scale: 1.0,
+				color: Color::WHITE.into(),
+			});
+		}
+		StarsInstanceData(stars)
+	}
+}
+
+struct CustomMaterialPlugin;
+
+impl Plugin for CustomMaterialPlugin {
+	fn build(&self, app: &mut App) {
+		app.add_plugins(ExtractComponentPlugin::<StarsInstanceData>::default());
+		app
+			.sub_app_mut(RenderApp)
+			.add_render_command::<Transparent3d, DrawCustom>()
+			.init_resource::<SpecializedMeshPipelines<CustomPipeline>>()
+			.add_systems(
+				Render,
+				(
+					queue_custom.in_set(RenderSet::QueueMeshes),
+					prepare_instance_buffers.in_set(RenderSet::PrepareResources),
+				),
+			);
+	}
+
+	fn finish(&self, app: &mut App) {
+		app.sub_app_mut(RenderApp).init_resource::<CustomPipeline>();
+	}
+}
+
+#[derive(Clone, Copy, Pod, Zeroable)]
+#[repr(C)]
+struct InstanceData {
+	position: Vec3,
+	// scale: f32,
+	color: [f32; 4],
+}
+
+#[allow(clippy::too_many_arguments)]
+fn queue_custom(
+	transparent_3d_draw_functions: Res<DrawFunctions<Transparent3d>>,
+	custom_pipeline: Res<CustomPipeline>,
+	msaa: Res<Msaa>,
+	mut pipelines: ResMut<SpecializedMeshPipelines<CustomPipeline>>,
+	pipeline_cache: Res<PipelineCache>,
+	meshes: Res<RenderAssets<Mesh>>,
+	render_mesh_instances: Res<RenderMeshInstances>,
+	material_meshes: Query<Entity, With<StarsInstanceData>>,
+	mut views: Query<(&ExtractedView, &mut RenderPhase<Transparent3d>)>,
+) {
+	let draw_custom = transparent_3d_draw_functions.read().id::<DrawCustom>();
+
+	let msaa_key = MeshPipelineKey::from_msaa_samples(msaa.samples());
+
+	for (view, mut transparent_phase) in &mut views {
+		let view_key = msaa_key | MeshPipelineKey::from_hdr(view.hdr);
+		let rangefinder = view.rangefinder3d();
+		for entity in &material_meshes {
+			let Some(mesh_instance) = render_mesh_instances.get(&entity) else {
+				continue;
+			};
+			let Some(mesh) = meshes.get(mesh_instance.mesh_asset_id) else {
+				continue;
+			};
+			let key = view_key | MeshPipelineKey::from_primitive_topology(mesh.primitive_topology);
+			let pipeline = pipelines
+				.specialize(&pipeline_cache, &custom_pipeline, key, &mesh.layout)
+				.unwrap();
+			transparent_phase.add(Transparent3d {
+				entity,
+				pipeline,
+				draw_function: draw_custom,
+				distance: rangefinder.distance_translation(&mesh_instance.transforms.transform.translation),
+				batch_range: 0..1,
+				dynamic_offset: None,
+			});
+		}
+	}
 }
 
 #[derive(Component)]
-struct StarfieldBindGroup(BindGroup);
-
-/// Render a sky filled with stars.
-pub struct StarfieldPlugin;
-impl Plugin for StarfieldPlugin {
-    fn build(&self, app: &mut App) {
-        let mut shaders = app.world.resource_mut::<Assets<Shader>>();
-        let starfield_shader = Shader::from_wgsl(include_str!("shader.wgsl"));
-        shaders.set_untracked(STARFIELD_SHADER_HANDLE, starfield_shader);
-
-        app.insert_resource(ClearColor(Color::BLACK))
-            .init_resource::<GameUnitsToCelestial>()
-            .init_resource::<StarfieldUniformBuffer>();
-
-        if let Ok(render_app) = app.get_sub_app_mut(RenderApp) {
-            render_app
-                .init_resource::<StarfieldPipeline>()
-                .init_resource::<StarfieldUniformBuffer>()
-                .init_resource::<SpecializedRenderPipelines<StarfieldPipeline>>()
-                .add_system(extract_starfield.in_schedule(ExtractSchedule))
-                .add_system(prepare_starfield.in_set(RenderSet::Prepare))
-                .add_system(queue_starfield.in_set(RenderSet::Queue))
-                .add_render_command::<Opaque3d, DrawStarfield>();
-        }
-    }
+struct InstanceBuffer {
+	buffer: Buffer,
+	length: usize,
 }
 
-fn extract_starfield(mut commands: Commands, r: Extract<Res<GameUnitsToCelestial>>) {
-    commands.insert_resource(r.clone())
-}
-
-fn prepare_starfield(
-    render_device: Res<RenderDevice>,
-    render_queue: Res<RenderQueue>,
-    mut starfield_buffer: ResMut<StarfieldUniformBuffer>,
-    game_units_to_celestial: Res<GameUnitsToCelestial>,
-    time: Res<Time>,
+fn prepare_instance_buffers(
+	mut commands: Commands,
+	query: Query<(Entity, &StarsInstanceData)>,
+	render_device: Res<RenderDevice>,
 ) {
-    let buffer = starfield_buffer.buffer.get_mut();
-
-    buffer.world_to_ecef = /*Mat3::from_cols(
-        Vec3::new(0.0, 1.0, 0.0),
-        Vec3::new(1.0, 0.0, 0.0),
-        Vec3::new(0.0, 0.0, -1.0),
-    ).transpose();*/
-        Mat3::from_euler(EulerRot::ZXY,
-        game_units_to_celestial.origin_longitude.to_radians(),
-        game_units_to_celestial.origin_latitude.to_radians(),
-        (180.0-game_units_to_celestial.heading).to_radians(),
-    )
-    .transpose();
-    buffer.sidereal_time = astro::mn_sidr(
-        game_units_to_celestial.initial_julian_date
-            + game_units_to_celestial.time_scale * time.elapsed_seconds_f64() / 86400.0,
-    ) as f32;
-
-    starfield_buffer
-        .buffer
-        .write_buffer(&render_device, &render_queue);
+	for (entity, instance_data) in &query {
+		let buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
+			label: Some("instance data buffer"),
+			contents: bytemuck::cast_slice(instance_data.0.as_slice()),
+			usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+		});
+		commands.entity(entity).insert(InstanceBuffer {
+			buffer,
+			length: instance_data.0.len(),
+		});
+	}
 }
-
-fn queue_starfield(
-    mut commands: Commands,
-    starfield_pipeline: Res<StarfieldPipeline>,
-    starfield_buffer: Res<StarfieldUniformBuffer>,
-    mut pipelines: ResMut<SpecializedRenderPipelines<StarfieldPipeline>>,
-    pipeline_cache: Res<PipelineCache>,
-    draw_functions: Res<DrawFunctions<Opaque3d>>,
-    render_device: Res<RenderDevice>,
-    view_uniforms: Res<ViewUniforms>,
-    msaa: Res<Msaa>,
-    mut views: Query<(Entity, &mut RenderPhase<Opaque3d>, &ViewTarget)>,
-) {
-    let draw_function = draw_functions.read().id::<DrawStarfield>();
-    if let (Some(view_uniforms), Some(starfield_buffer)) = (
-        view_uniforms.uniforms.binding(),
-        starfield_buffer.buffer.binding(),
-    ) {
-        for (entity, mut opaque3d, view_target) in views.iter_mut() {
-            opaque3d.add(Opaque3d {
-                distance: f32::MAX,
-                pipeline: pipelines.specialize(
-                    &pipeline_cache,
-                    &starfield_pipeline,
-                    (msaa.samples(), view_target.main_texture_format()),
-                ),
-                entity: commands.spawn_empty().id(),
-                draw_function,
-            });
-
-            commands
-                .entity(entity)
-                .insert(StarfieldBindGroup(render_device.create_bind_group(
-                    &BindGroupDescriptor {
-                        label: Some("starfield_bind_group"),
-                        layout: &starfield_pipeline.stars_layout,
-                        entries: &[
-                            BindGroupEntry {
-                                binding: 0,
-                                resource: view_uniforms.clone(),
-                            },
-                            BindGroupEntry {
-                                binding: 1,
-                                resource: starfield_buffer.clone(),
-                            },
-                            BindGroupEntry {
-                                binding: 2,
-                                resource: BindingResource::Buffer(BufferBinding {
-                                    buffer: &starfield_pipeline.stars_buffer,
-                                    offset: 0,
-                                    size: None,
-                                }),
-                            },
-                        ],
-                    },
-                )));
-        }
-    }
-}
-
-const STARFIELD_SHADER_HANDLE: HandleUntyped =
-    HandleUntyped::weak_from_u64(Shader::TYPE_UUID, 17029892201246543411);
 
 #[derive(Resource)]
-struct StarfieldPipeline {
-    stars_buffer: Buffer,
-    stars_layout: BindGroupLayout,
-}
-impl FromWorld for StarfieldPipeline {
-    fn from_world(world: &mut World) -> Self {
-        let mut system_state: SystemState<(
-            Res<RenderDevice>,
-            Res<DefaultImageSampler>,
-            Res<RenderQueue>,
-        )> = SystemState::new(world);
-        let (render_device, _default_sampler, _render_queue) = system_state.get_mut(world);
-
-        let mut stars = vec![0.0f32; 4 * 9096];
-        bytemuck::cast_slice_mut(&mut stars).copy_from_slice(include_bytes!("../stars.bin"));
-        for star in stars.chunks_mut(4) {
-            let (gal_lat, gal_long) = (star[0] as f64, star[1] as f64);
-            star[0] = crate::astro::dec_frm_gal(gal_long, gal_lat) as f32;
-            star[1] = crate::astro::asc_frm_gal(gal_long, gal_lat) as f32;
-        }
-
-        let stars_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
-            label: Some("starfield_buffer"),
-            contents: bytemuck::cast_slice(&stars),
-            usage: BufferUsages::STORAGE,
-        });
-
-        let stars_layout = render_device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            entries: &[
-                BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStages::VERTEX,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: true,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: ShaderStages::VERTEX,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: ShaderStages::VERTEX,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: NonZeroU64::new(4 * 9096),
-                    },
-                    count: None,
-                },
-            ],
-            label: Some("starfield_layout"),
-        });
-
-        Self {
-            stars_buffer,
-            stars_layout,
-        }
-    }
-}
-impl SpecializedRenderPipeline for StarfieldPipeline {
-    type Key = (u32, TextureFormat);
-    fn specialize(&self, (samples, texture_format): Self::Key) -> RenderPipelineDescriptor {
-        RenderPipelineDescriptor {
-            label: Some("starfield_pipeline".into()),
-            layout: vec![self.stars_layout.clone()],
-            push_constant_ranges: vec![],
-            vertex: VertexState {
-                shader: STARFIELD_SHADER_HANDLE.typed::<Shader>(),
-                shader_defs: Vec::new(),
-                entry_point: "vertex".into(),
-                buffers: Vec::new(),
-            },
-            primitive: PrimitiveState {
-                topology: PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: FrontFace::Ccw,
-                cull_mode: None,
-                polygon_mode: PolygonMode::Fill,
-                conservative: false,
-                unclipped_depth: false,
-            },
-            depth_stencil: Some(DepthStencilState {
-                format: TextureFormat::Depth32Float,
-                depth_write_enabled: false,
-                depth_compare: CompareFunction::GreaterEqual,
-                stencil: Default::default(),
-                bias: Default::default(),
-            }),
-            multisample: MultisampleState {
-                count: samples,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            fragment: Some(FragmentState {
-                shader: STARFIELD_SHADER_HANDLE.typed::<Shader>(),
-                shader_defs: Vec::new(),
-                entry_point: "fragment".into(),
-                targets: vec![Some(ColorTargetState {
-                    format: texture_format,
-                    blend: Some(BlendState::ALPHA_BLENDING),
-                    write_mask: ColorWrites::ALL,
-                })],
-            }),
-        }
-    }
+struct CustomPipeline {
+	shader: Handle<Shader>,
+	mesh_pipeline: MeshPipeline,
 }
 
-struct StarfieldRenderCommand;
-impl<P: PhaseItem> RenderCommand<P> for StarfieldRenderCommand {
-    type Param = ();
-    type ViewWorldQuery = (Read<ViewUniformOffset>, Read<StarfieldBindGroup>);
-    type ItemWorldQuery = ();
+impl FromWorld for CustomPipeline {
+	fn from_world(world: &mut World) -> Self {
+		#[cfg(not(feature = "dev"))]
+		let shader = STARFIELD_SHADER_HANDLE;
 
-    fn render<'w>(
-        _item: &P,
-        (view_uniform, bind_group): <<Self::ViewWorldQuery as WorldQuery>::ReadOnly as WorldQuery>::Item<'w>,
-        _entity: <<Self::ItemWorldQuery as WorldQuery>::ReadOnly as WorldQuery>::Item<'w>,
-        _param: <Self::Param as SystemParam>::Item<'w, '_>,
-        pass: &mut TrackedRenderPass<'w>,
-    ) -> RenderCommandResult {
-        pass.set_bind_group(0, &bind_group.0, &[view_uniform.offset]);
-        pass.draw(0..6 * 9096, 0..1);
-        RenderCommandResult::Success
-    }
+		#[cfg(feature = "dev")]
+		let shader = world
+			.resource::<AssetServer>()
+			.load("starfield_shader.wgsl");
+
+		let mesh_pipeline = world.resource::<MeshPipeline>();
+
+		CustomPipeline {
+			shader,
+			mesh_pipeline: mesh_pipeline.clone(),
+		}
+	}
+}
+
+impl SpecializedMeshPipeline for CustomPipeline {
+	type Key = MeshPipelineKey;
+
+	fn specialize(
+		&self,
+		key: Self::Key,
+		layout: &MeshVertexBufferLayout,
+	) -> Result<RenderPipelineDescriptor, SpecializedMeshPipelineError> {
+		let mut descriptor = self.mesh_pipeline.specialize(key, layout)?;
+
+		// meshes typically live in bind group 2. because we are using bindgroup 1
+		// we need to add MESH_BINDGROUP_1 shader def so that the bindings are correctly
+		// linked in the shader
+		descriptor
+			.vertex
+			.shader_defs
+			.push("MESH_BINDGROUP_1".into());
+
+		descriptor.vertex.shader = self.shader.clone();
+		descriptor.vertex.buffers.push(VertexBufferLayout {
+			array_stride: std::mem::size_of::<InstanceData>() as u64,
+			step_mode: VertexStepMode::Instance,
+			attributes: vec![
+				VertexAttribute {
+					format: VertexFormat::Float32x3,
+					offset: 0,
+					shader_location: 3, // shader locations 0-2 are taken up by Position, Normal and UV attributes
+				},
+				VertexAttribute {
+					format: VertexFormat::Float32x4,
+					offset: VertexFormat::Float32x3.size(),
+					shader_location: 4,
+				},
+			],
+		});
+		descriptor.fragment.as_mut().unwrap().shader = self.shader.clone();
+		Ok(descriptor)
+	}
+}
+
+type DrawCustom = (
+	SetItemPipeline,
+	SetMeshViewBindGroup<0>,
+	SetMeshBindGroup<1>,
+	DrawMeshInstanced,
+);
+
+struct DrawMeshInstanced;
+
+impl<P: PhaseItem> RenderCommand<P> for DrawMeshInstanced {
+	type Param = (SRes<RenderAssets<Mesh>>, SRes<RenderMeshInstances>);
+	type ViewWorldQuery = ();
+	type ItemWorldQuery = Read<InstanceBuffer>;
+
+	#[inline]
+	fn render<'w>(
+		item: &P,
+		_view: (),
+		instance_buffer: &'w InstanceBuffer,
+		(meshes, render_mesh_instances): SystemParamItem<'w, '_, Self::Param>,
+		pass: &mut TrackedRenderPass<'w>,
+	) -> RenderCommandResult {
+		let Some(mesh_instance) = render_mesh_instances.get(&item.entity()) else {
+			return RenderCommandResult::Failure;
+		};
+		let gpu_mesh = match meshes.into_inner().get(mesh_instance.mesh_asset_id) {
+			Some(gpu_mesh) => gpu_mesh,
+			None => return RenderCommandResult::Failure,
+		};
+
+		pass.set_vertex_buffer(0, gpu_mesh.vertex_buffer.slice(..));
+		pass.set_vertex_buffer(1, instance_buffer.buffer.slice(..));
+
+		match &gpu_mesh.buffer_info {
+			GpuBufferInfo::Indexed {
+				buffer,
+				index_format,
+				count,
+			} => {
+				pass.set_index_buffer(buffer.slice(..), 0, *index_format);
+				pass.draw_indexed(0..*count, 0, 0..instance_buffer.length as u32);
+			}
+			GpuBufferInfo::NonIndexed => {
+				pass.draw(0..gpu_mesh.vertex_count, 0..instance_buffer.length as u32);
+			}
+		}
+		RenderCommandResult::Success
+	}
 }

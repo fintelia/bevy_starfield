@@ -5,9 +5,8 @@ use bevy_starfield::StarfieldPlugin;
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins)
-        .add_plugin(StarfieldPlugin)
-        .add_startup_system(setup)
+        .add_plugins((DefaultPlugins, StarfieldPlugin::default()))
+        .add_systems(Startup, setup)
         .run();
 }
 
@@ -45,4 +44,6 @@ fn setup(
         transform: Transform::from_xyz(-2.0, 2.5, 5.0).looking_at(Vec3::ZERO, Vec3::Y),
         ..default()
     });
+		// black background
+		commands.insert_resource(ClearColor(Color::BLACK));
 }

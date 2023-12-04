@@ -1,15 +1,21 @@
 [package]
 name = "bevy_starfield"
-description = "A procedural night sky plugin for bevy"
-version = "0.1.1"
+description = "A random night sky plugin for bevy"
+version = "0.2.0"
 edition = "2021"
-authors = ["Jonathan Behrens <fintelia@gmail.com>"]
+authors = ["Caleb Yates <calebyates42@gmail.com>", "Jonathan Behrens <fintelia@gmail.com>"]
 license = "MIT OR Apache-2.0"
 documentation = "https://docs.rs/bevy_starfield"
-homepage = "https://github.com/fintelia/bevy_starfield"
-repository = "https://github.com/fintelia/bevy_starfield"
-exclude = ["/examples/", "/.github/"]
+homepage = "https://github.com/ActuallyHappening/bevy_starfield"
+repository = "https://github.com/ActuallyHappening/bevy_starfield"
+exclude = ["/examples/", "/.github/", "/assets"]
 
 [dependencies]
-bevy = "0.10.1"
-bytemuck = "1.13.1"
+bevy = "0.12.1"
+bytemuck = "*"
+rand = "0.8.5"
+rng = "0.1.0"
+
+[features]
+## Only enable when actually developing this crate
+dev = ["bevy/file_watcher", "bevy/dynamic_linking"]
